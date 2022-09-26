@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<!-- Load d3.js -->
+<script src="https://code.jquery.com/jquery-1.9.1.js"></script>
+<script src="https://d3js.org/d3.v6.js"></script>
+
+<!-- Create a div where the graph will take place -->
+<div id="my_dataviz"></div>
+<button id="ccpca">ccPCA</button>
+
+<script>
+var margin = { top: 40, right: 40, bottom: 40, left: 40 },
+    width = 960 - margin.left - margin.right,
+    height = 640 - margin.top - margin.bottom;
+
+var plot_size = 500, loading_size = 80, clustering_size = 160;
+
+async function get_kmeans_data() {
+	const kmeans_data = await $.ajax({
+        url: 'http://127.0.0.1:5000/kmeans',
+        dataType: 'json',
+        contentType: 'application/json;charset=UTF-8',
+        type: 'GET'
+	});
+	return kmeans_data;
+}
+async function get_pca_data(){
+	const pca_data = await $.ajax({
+      url: 'http://127.0.0.1:5000/initial_pca',
+      dataType: 'json',
+      contentType: 'application/json;charset=UTF-8',
+      type: 'GET',
+	});
+	return pca_data;
+}
+async function get_points_data(){
+	const points_datas = await $.ajax({
+      url: 'http://127.0.0.1:5000/get_points_data',
+      dataType: 'json',
+      contentType: 'application/json;charset=UTF-8',
+      type: 'GET'
+	});
+	return points_datas;
+}
+async function make_ccpca(labels){
+	const new_data = await $.ajax({
+		url: 'http://127.0.0.1:5000/ccpca',
+		dataType: 'json',
+		type: 'POST',
+		data: labels,
+		success: function(response){
+			//console.log('siu',response)
+		},
+	});
+	return new_data;
+}
+
+
+let svg = d3.select('#my_dataviz').append('svg')
+	.attr('width',width).attr('height',940)
+let central_plot = svg.append('g').attr('transform', 'translate(40,40)')
+let scatterplot_g = central_plot.append('g').attr('transform', 'translate(0,0)')
+let x_loading_g = central_plot.append('g').attr('transform','translate(0,'+(plot_size)+')')
+let y_loading_g = central_plot.append('g').attr('transform','translate('+(plot_size)+',0)')
+let cluster_g = central_plot.append('g').attr('transform', 'translate(0,'+(plot_size+loading_size*2+40)+')')
+
+get_pca_data().then((response)=>{create_scatterplot(scatterplot_g, response);
+								 create_barsplot(x_loading_g, y_loading_g, response);
+								 get_points_data().then((response)=>{scatter_hovering(scatterplot_g, response);});
+								})
+
+get_kmeans_data().then((response)=>{create_clustering(cluster_g, response);
+									cluster_selection(cluster_g, scatterplot_g, response);})
+
+
+function create_scatterplot(g, pca_data){
+	var scatter_radio = 5;
+	var scatter_xscale = d3.scaleLinear().domain(d3.extent(pca_data.projection, d=>d[0]))
+		.range([scatter_radio,plot_size-scatter_radio]);
+
+	var scatter_yscale = d3.scaleLinear().domain(d3.extent(pca_data.projection, d=>d[1]))
+		.range([scatter_radio,plot_size-scatter_radio]);
+
+	g.selectAll('circle').data(pca_data.projection)
+		.join('circle')
+			.attr('cx',d=>scatter_xscale(d[0]))
+			.attr('cy',d=>scatter_yscale(d[1]))
+			.attr('r',scatter_radio)
+			.attr('fill','rgba(150,150,150,0.5)').attr('stroke',d3.hcl(0,0,70))
+			.attr('idx',(d,i)=>i)
+	g.append('g').call(d3.axisTop().scale(scatter_xscale).ticks(6))
+		.attr('transform', 'translate(0,0)')
+		// .select('.domain').attr('visibility','hidden');
+	
+	g.append('g').call(d3.axisLeft().scale(scatter_yscale).ticks(6))
+		.attr('transform', 'translate(0,0)')
+		// .select('.domain').attr('visibility','hidden');
+}
+
+function create_barsplot(gx,gy,pca_data){
+	let loading_labels = [];
+	let x_loading = pca_data.loading_x.reverse()
+	let y_loading = pca_data.loading_y.reverse()
+	
+	x_loading.forEach(e=>loading_labels.push(e.attribute));
+
+	var loading_catscale = d3.scaleBand().domain(loading_labels).range([0,plot_size])
+	var x_loading_heiscale = d3.scaleLinear()
+		.domain([-1*d3.max(x_loading, d=>Math.abs(d.loading)),d3.max(x_loading, d=>Math.abs(d.loading))])
+		.range([0,loading_size/2])
+	var y_loading_widscale = d3.scaleLinear()
+		.domain([-1*d3.max(y_loading, d=>Math.abs(d.loading)),d3.max(y_loading, d=>Math.abs(d.loading))])
+		.range([0,loading_size/2])
+
+	gx.selectAll('bar').data(x_loading)
+		.join('rect')
+			.attr('x',d=>loading_catscale(d.attribute))
+			.attr('y',d=> d.loading>0? (loading_size/2)-x_loading_heiscale(d.loading):loading_size/2)
+			.attr('width', loading_catscale.bandwidth())
+			.attr('height', d=>d.loading<0? (loading_size/2)-x_loading_heiscale(d.loading):x_loading_heiscale(d.loading))
+			.attr('fill', d=>d.loading>0? 'rgba(72,142,158,0.9)' : 'rgba(172,116,117,0.9)')
+			.attr('stroke','white');//d3.hcl(0,0,70));
+
+	gx.selectAll('bar').data(x_loading)
+		.join('text')
+			.text((d,i)=>loading_labels[i])
+			.attr('fill', 'rgb(100,100,100)')
+			.attr('font-size',12)
+			.attr('transform', d=>'translate(' + (loading_catscale(d.attribute)+10)+','+(loading_size+2)+') rotate(90)');
+
+	gy.selectAll('bar').data(y_loading)
+		.join('rect')
+			.attr('x', d=>d.loading>0? (loading_size/2)-y_loading_widscale(d.loading):loading_size/2)
+			.attr('y', d=>loading_catscale(d.attribute))
+			.attr('width', d=>d.loading<0? (loading_size/2)-y_loading_widscale(d.loading):y_loading_widscale(d.loading))
+			.attr('height', loading_catscale.bandwidth())
+			.attr('fill', d=>d.loading>0? 'rgba(72,142,158,0.9)' : 'rgba(172,116,117,0.9)')
+			.attr('stroke','white');
+	gy.selectAll('bar').data(y_loading)
+		.join('text')
+			.text((d,i)=>loading_labels[i])
+			.attr('fill', 'rgb(100,100,100)')
+			.attr('font-size',12)
+			.attr('transform', d=>'translate('+(loading_size+2)+','+(loading_catscale(d.attribute)+15)+')');
+}
+
+function create_clustering(g, kmeans_data){
+	let heatmap_labels = ([...new Set(kmeans_data.map(e=>e.label))]).sort();
+	let heatmap_data = [];
+	let heatmap_cluster = {};
+	heatmap_labels.forEach(e=>{heatmap_cluster[e] = new Set()});
+	kmeans_data.forEach(e=>{
+		var att = heatmap_data.find(d=>d.attribute === e.attribute && d.label === e.label);
+		if(att){
+			att.value = att.value + e.value;
+			heatmap_cluster[e.label].add(e.id)
+		}else{
+			heatmap_data.push({attribute:e.attribute,
+								label: e.label,
+								value: e.value})
+		}
+	});
+	let heatmap_attrbs = ([...new Set(heatmap_data.map(e=>e.attribute))]).reverse();
+
+	var heatmap_lblscale = d3.scaleBand().domain(heatmap_labels).range([0,clustering_size]);
+	var heatmap_colscale = d3.scaleLinear().domain(d3.extent(heatmap_data,d=>d.value)).range(['#dfe0e0','#133b15']);
+	var heatmap_attscale = d3.scaleBand().domain(heatmap_attrbs).range([0,plot_size]);
+	var heatmap_lxscale = d3.scaleLinear().domain(d3.extent(heatmap_data,d=>d.value)).range([0,180]);
+
+	g.selectAll().data(heatmap_data).enter()
+		.append('rect')
+			.attr('x', d=>heatmap_attscale(d.attribute))
+			.attr('y', d=>heatmap_lblscale(d.label))
+			.attr('width', heatmap_attscale.bandwidth())
+			.attr('height', heatmap_lblscale.bandwidth())
+			.attr('fill', d=>heatmap_colscale(d.value))
+			.attr('stroke', 'white');
+	
+	var gradient = g.append('linearGradient')
+		.attr('y1',0).attr('y2',0)
+		.attr('x1',plot_size+10).attr('x2',plot_size+190)
+		.attr('id', 'gradient').attr('gradientUnits', 'userSpaceOnUse');
+	gradient.append('stop')
+		.attr('offset', 0).attr('stop-color', '#dfe0e0');
+	gradient.append('stop')
+		.attr('offset', 1).attr('stop-color', '#133b15');
+
+	g.append('rect')
+		.attr('x', plot_size+10)
+		.attr('width', 180).attr('height', 20)
+		.attr('fill', 'url(#gradient)');
+	
+	g.append('g').call(d3.axisBottom().scale(heatmap_lxscale).ticks(7))
+		.attr('transform', 'translate('+(plot_size+10)+',20)')
+		.select('.domain').attr('visibility', 'hidden');
+}
+
+function scatter_hovering(g, points_data){
+	let episode_names = points_data.names;
+	let image_urls = points_data.urls;
+	
+
+	g.selectAll('circle').on('mouseover', function(d){
+		let current = d3.select(this);
+		current.raise().attr('fill','rgba(139,91,181,0.8)');
+		g.append('image')
+			.attr('xlink:href', 'http://127.0.0.1:5000/'+image_urls[current.attr('idx')])
+			.attr('width',90).attr('height',55)
+			.attr('x',current.attr('cx')-45).attr('y',current.attr('cy')-(55+15))
+			.attr('id', 'current_img');
+		g.append('text')
+			.text(episode_names[current.attr('idx')])
+			.attr('x',current.attr('cx')).attr('y',current.attr('cy'))
+			.attr('dy',-5)
+			.attr('text-anchor','middle').attr('font-size',10)
+			.attr('id','current_txt');
+	});
+	g.selectAll('circle').on('mouseout', function(d){
+		d3.select(this).attr('fill','rgba(150,150,150,0.5)');
+		d3.select('text#current_txt').remove();
+		d3.select('image#current_img').remove();
+	})
+}
+
+function cluster_selection(g,s, kmeans_data){
+	let heatmap_labels = ([...new Set(kmeans_data.map(e=>e.label))]).sort();
+	let heatmap_data = [];
+	let heatmap_cluster = {};
+	heatmap_labels.forEach(e=>{heatmap_cluster[e] = new Set()});
+
+	kmeans_data.forEach(e=>{
+		var att = heatmap_data.find(d=>d.attribute === e.attribute && d.label === e.label);
+		if(att){
+			att.value = att.value + e.value;
+			heatmap_cluster[e.label].add(e.id);
+		}else{
+			heatmap_data.push({attribute:e.attribute,
+								label: e.label,
+								value: e.value})
+		}
+	});
+	var heatmap_lblscale = d3.scaleBand().domain(heatmap_labels).range([0,clustering_size]);
+	g.selectAll().data(heatmap_labels)
+		.join('circle')
+			.attr('cx', -15)
+			.attr('cy', d=>(heatmap_lblscale(d)+heatmap_lblscale.bandwidth()/2))
+			.attr('r', heatmap_lblscale.bandwidth()/3)
+			.attr('stroke',d3.hcl(0,0,70)).attr('fill','white')
+			.attr('class','selectc')
+			.attr('selected','false')
+			.attr('label',d=>d);
+	g.selectAll('.selectc').data(heatmap_data).on('click',function(d){
+		let selected_cluster = d3.select(this)
+		if (selected_cluster.attr('selected') === 'true'){
+			selected_cluster.attr('selected','false');
+			selected_cluster.attr('fill','white');
+			s.selectAll('circle').each(function(d){
+				let point = d3.select(this);
+				if (heatmap_cluster[selected_cluster.attr('label')].has(Number(point.attr('idx')))){
+					point.attr('fill','rgba(150,150,150,0.5');
+				}
+			});
+		}else{
+			selected_cluster.attr('selected','true');
+			selected_cluster.attr('fill','rgb(150, 187, 217)');
+			s.selectAll('circle').each(function(d){
+				let point = d3.select(this);
+				if (heatmap_cluster[selected_cluster.attr('label')].has(Number(point.attr('idx')))){
+					point.attr('fill','rgba(252, 76, 99,0.5)');
+				}
+			});
+		}
+	})
+}
+
+function alter_scatterplot(g, new_data){
+	let idx = new_data.idx;
+	let new_projection = new_data.projection;
+	console.log(new_projection)
+	g.selectAll('circle').each(function(d){
+		let point = d3.select(this)
+		if (point.attr('idx') in idx){
+			point.attr('cx', new_projection[point.attr('idx')][0]);
+			point.attr('cy', new_projection[point.attr('idx')][1]);
+		}
+	});
+}
+$('#ccpca').on('click', function(){
+	let objects = document.getElementsByClassName('selectc');
+	//console.log( objects)
+	let data = {};
+	for (let e of objects){
+		data[e.getAttribute('label')] = e.getAttribute('selected');
+	}
+	//console.log(data)
+	make_ccpca(data).then((response)=>{alter_scatterplot(scatterplot_g, response);})
+})
+
+</script>
