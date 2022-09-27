@@ -196,10 +196,12 @@ function create_clustering(g, kmeans_data){
 		.select('.domain').attr('visibility', 'hidden');
 }
 
+let pointsdata = null;
+
 function scatter_hovering(g, points_data){
+    pointsdata = points_data
 	let episode_names = points_data.names;
 	let image_urls = points_data.urls;
-	
 
 	g.selectAll('circle').on('mouseover', function(d){
 		let current = d3.select(this);
@@ -258,7 +260,7 @@ function cluster_selection(g,s, kmeans_data){
 			s.selectAll('circle').each(function(d){
 				let point = d3.select(this);
 				if (heatmap_cluster[selected_cluster.attr('label')].has(Number(point.attr('idx')))){
-					point.attr('fill','rgba(150,150,150,0.5');
+					point.attr('fill','rgba(150,150,150,0.5)');
 				}
 			});
 		}else{
@@ -274,18 +276,23 @@ function cluster_selection(g,s, kmeans_data){
 	})
 }
 
-function alter_scatterplot(g, new_data){
-	let idx = new_data.idx;
-	let new_projection = new_data.projection;
-	console.log(new_projection)
-	g.selectAll('circle').each(function(d){
-		let point = d3.select(this)
-		if (point.attr('idx') in idx){
-			point.attr('cx', new_projection[point.attr('idx')][0]);
-			point.attr('cy', new_projection[point.attr('idx')][1]);
-		}
-	});
+function alter_scatterplot(g,gx,gy, new_data){
+    g.selectAll('*').remove();
+    gx.selectAll('*').remove();
+    gy.selectAll('*').remove();
+
+    create_scatterplot(scatterplot_g, new_data.pca);
+    create_barsplot(x_loading_g, y_loading_g, new_data.pca);
+    scatter_hovering(scatterplot_g, pointsdata);
+
+    scatterplot_g.selectAll('circle').each(function(d){
+        let point = d3.select(this);
+        if (point.attr('idx') in new_data.selected){
+            point.attr('fill','rgba(252, 76, 99,0.5)');
+        }
+    });
 }
+
 $('#ccpca').on('click', function(){
 	let objects = document.getElementsByClassName('selectc');
 	//console.log( objects)
@@ -294,7 +301,7 @@ $('#ccpca').on('click', function(){
 		data[e.getAttribute('label')] = e.getAttribute('selected');
 	}
 	//console.log(data)
-	make_ccpca(data).then((response)=>{alter_scatterplot(scatterplot_g, response);})
+	make_ccpca(data).then((response)=>{alter_scatterplot(scatterplot_g, x_loading_g, y_loading_g, response);})
 })
 
 </script>

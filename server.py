@@ -108,7 +108,7 @@ def ccpca():
         for i,l in enumerate(kmlabels):
             if l.item() in targetlbls:
                 selected_idx += [i]
-        alpha = 1.1
+        alpha = 0.88
         from sklearn.preprocessing import StandardScaler
         scaler = StandardScaler()
         painting_attributes_ = scaler.fit_transform(painting_attributes)
@@ -127,41 +127,22 @@ def ccpca():
         reduced_dataset = target_set.dot(v_top)
         reduced_dataset[:,0] = reduced_dataset[:,0]*np.sign(reduced_dataset[0,0])
         reduced_dataset[:,1] = reduced_dataset[:,1]*np.sign(reduced_dataset[0,1])
+        remains_dataset = background.dot(v_top)
+        remains_dataset[:,0] = remains_dataset[:,0]*np.sign(remains_dataset[0,0])
+        remains_dataset[:,1] = remains_dataset[:,1]*np.sign(remains_dataset[0,1])
 
-        new_points = []
-        for i,idx in enumerate(selected_idx):
-            new_points.append({idx:reduced_dataset[i,:].tolist()})
+        new_data = np.zeros((painting_attributes_.shape[0],2))
+        new_data[selected_idx,:] = reduced_dataset
+        new_data[back_idx,:] = remains_dataset
 
-        return flask.jsonify({'idx':selected_idx,'projection':new_points})
+        loads = v_top * np.sqrt(np.abs(w[eig_idx]))
+        
+        x_loading = [{'attribute':a,'loading':l.item()} for a,l in zip(attribute_names,loads[:,0])]
+        y_loading = [{'attribute':a,'loading':l.item()} for a,l in zip(attribute_names,loads[:,1])]
+        pca_data = {'loading_x':x_loading, 'loading_y':y_loading, 'projection': new_data.tolist()}
+        return flask.jsonify({'pca':pca_data, 'selected':selected_idx})
     else:
         return flask.jsonify([0])
-    data = flask.request.get_json()
-    selected_idx = data['data']
-    label = data['label']
-    alpha = data['alpha']
-    back_idx = [i for i in range(painting_attributes.shape[0]) if i not in selected_idx]
-
-    target_set = pca_[selected_idx,:]
-    background = pca_[back_idx,:]
-    n_target, _= target_set.shape
-    n_backgr, _= background.shape
-
-    back_covm = background.T.dot(background)/(n_backgr-1)
-    targ_covm = target_set.T.dot(target_set)/(n_target-1)
-
-    sigma = targ_covm - alpha*back_covm
-    w, v = np.linalg.eig(sigma)
-    print(w.shape,v.shape)
-    eig_idx = np.argpartition(w, -2)[-2:]
-    eig_idx = eig_idx[np.argsort(-w[eig_idx])]
-    v_top = v[:,eig_idx]
-    
-    reduced_dataset = target_set.dot(v_top)
-    reduced_dataset[:,0] = reduced_dataset[:,0]*np.sign(reduced_dataset[0,0])
-    reduced_dataset[:,1] = reduced_dataset[:,1]*np.sign(reduced_dataset[0,1])
-    #return reduced_dataset
-
-    return flask.jsonify([0])
 #
 
 '''
