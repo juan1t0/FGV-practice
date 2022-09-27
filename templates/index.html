@@ -52,6 +52,9 @@ async function make_ccpca(labels){
 		success: function(response){
 			//console.log('siu',response)
 		},
+		error: function(data){
+			alert('No cluster selected')
+		}
 	});
 	return new_data;
 }
@@ -197,6 +200,7 @@ function create_clustering(g, kmeans_data){
 }
 
 let pointsdata = null;
+let heatmap_cluster = null;
 
 function scatter_hovering(g, points_data){
     pointsdata = points_data
@@ -228,7 +232,7 @@ function scatter_hovering(g, points_data){
 function cluster_selection(g,s, kmeans_data){
 	let heatmap_labels = ([...new Set(kmeans_data.map(e=>e.label))]).sort();
 	let heatmap_data = [];
-	let heatmap_cluster = {};
+	heatmap_cluster = {};
 	heatmap_labels.forEach(e=>{heatmap_cluster[e] = new Set()});
 
 	kmeans_data.forEach(e=>{
@@ -276,21 +280,25 @@ function cluster_selection(g,s, kmeans_data){
 	})
 }
 
-function alter_scatterplot(g,gx,gy, new_data){
-    g.selectAll('*').remove();
+function alter_scatterplot(gs,gx,gy,gc, new_pca){
+    gs.selectAll('*').remove();
     gx.selectAll('*').remove();
     gy.selectAll('*').remove();
 
-    create_scatterplot(scatterplot_g, new_data.pca);
-    create_barsplot(x_loading_g, y_loading_g, new_data.pca);
-    scatter_hovering(scatterplot_g, pointsdata);
-
-    scatterplot_g.selectAll('circle').each(function(d){
-        let point = d3.select(this);
-        if (point.attr('idx') in new_data.selected){
-            point.attr('fill','rgba(252, 76, 99,0.5)');
-        }
-    });
+    create_scatterplot(gs, new_pca);
+    create_barsplot(gx, gy, new_pca);
+    scatter_hovering(gs, pointsdata);
+	gc.selectAll('.selectc').each(function(d) {
+		let selected_cluster = d3.select(this);
+		if (selected_cluster.attr('selected') == 'true'){
+			gs.selectAll('circle').each(function(e){
+				let point = d3.select(this);
+				if (heatmap_cluster[selected_cluster.attr('label')].has(Number(point.attr('idx')))){
+					point.attr('fill','rgba(252, 76, 99,0.5)');
+				}
+			});
+		}
+	});
 }
 
 $('#ccpca').on('click', function(){
@@ -301,7 +309,10 @@ $('#ccpca').on('click', function(){
 		data[e.getAttribute('label')] = e.getAttribute('selected');
 	}
 	//console.log(data)
-	make_ccpca(data).then((response)=>{alter_scatterplot(scatterplot_g, x_loading_g, y_loading_g, response);})
+	make_ccpca(data).then((response)=>{alter_scatterplot(scatterplot_g,
+														 x_loading_g, y_loading_g,
+														 cluster_g,
+														 response);})
 })
 
 </script>

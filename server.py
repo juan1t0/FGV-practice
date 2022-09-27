@@ -140,7 +140,7 @@ def ccpca():
         x_loading = [{'attribute':a,'loading':l.item()} for a,l in zip(attribute_names,loads[:,0])]
         y_loading = [{'attribute':a,'loading':l.item()} for a,l in zip(attribute_names,loads[:,1])]
         pca_data = {'loading_x':x_loading, 'loading_y':y_loading, 'projection': new_data.tolist()}
-        return flask.jsonify({'pca':pca_data, 'selected':selected_idx})
+        return flask.jsonify(pca_data)
     else:
         return flask.jsonify([0])
 #
